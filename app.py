@@ -8,31 +8,44 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=".env")
 
 
-# ---------------- FUNCTIONS ---------------- #
-
 def create_search_query(niche, city):
     return f"{niche} in {city}"
 
 
-def fetch_businesses(query):
-    api_key = os.getenv("SERPAPI_KEY")
+# 🔥 PAGINATED FETCH
+def fetch_businesses(query, max_results=100):
+    api_key = os.getenv("SERPAPI_KEY") or st.secrets["SERPAPI_KEY"]
 
     url = "https://serpapi.com/search.json"
 
-    params = {
-        "engine": "google_maps",
-        "q": query,
-        "api_key": api_key
-    }
+    all_results = []
+    start = 0
 
-    response = requests.get(url, params=params)
+    while len(all_results) < max_results:
+        params = {
+            "engine": "google_maps",
+            "q": query,
+            "start": start,
+            "api_key": api_key
+        }
 
-    if response.status_code != 200:
-        st.error("Error fetching data")
-        return []
+        response = requests.get(url, params=params)
 
-    data = response.json()
-    return data.get("local_results", [])
+        if response.status_code != 200:
+            st.error("Error fetching data")
+            break
+
+        data = response.json()
+        results = data.get("local_results", [])
+
+        if not results:
+            break
+
+        all_results.extend(results)
+
+        start += 20  # next page
+
+    return all_results[:max_results]
 
 
 def extract_emails_from_text(text):
@@ -54,7 +67,6 @@ def extract_email_from_website(base_url):
 
             if emails:
                 return emails[0]
-
         except:
             continue
 
@@ -67,10 +79,10 @@ def clean_email(email):
 
     email = email.lower().strip()
 
-    junk_keywords = ["info@", "support@", "admin@", "contact@", "help@"]
+    junk = ["info@", "support@", "admin@", "contact@", "help@"]
 
-    for junk in junk_keywords:
-        if junk in email:
+    for j in junk:
+        if j in email:
             return None
 
     return email
@@ -117,43 +129,45 @@ def extract_data(businesses):
 
 # ---------------- UI ---------------- #
 
-st.title("🚀 AI Lead Agent")
+st.title("🚀 AI Lead Agent (Pro Max)")
 
-niche = st.text_input("Enter Niche (e.g., school, hospital)")
+niche = st.text_input("Enter Niche")
 cities_input = st.text_input("Enter Cities (comma separated)")
+max_results = st.slider("Number of leads to fetch", 20, 200, 100)
 
 if st.button("Generate Leads"):
 
     if not niche or not cities_input:
-        st.warning("Please enter both niche and cities")
+        st.warning("Enter all fields")
     else:
         cities = [c.strip() for c in cities_input.split(",")]
 
         all_leads = []
 
-        st.write("Processing... please wait ⏳")
-
         for city in cities:
-            st.write(f"Processing: {city}")
+            st.write(f"Processing {city}...")
 
             query = create_search_query(niche, city)
-            businesses = fetch_businesses(query)
+
+            businesses = fetch_businesses(query, max_results)
 
             leads = extract_data(businesses)
             all_leads.extend(leads)
 
         df = pd.DataFrame(all_leads)
+
+        # 🔥 REMOVE DUPLICATES
         df = df.drop_duplicates(subset=["email"])
 
-        st.success(f"Found {len(df)} high-quality leads")
+        st.success(f"Generated {len(df)} leads")
 
         st.dataframe(df)
 
         csv = df.to_csv(index=False).encode("utf-8")
 
         st.download_button(
-            label="📥 Download Leads CSV",
-            data=csv,
-            file_name="final_leads.csv",
-            mime="text/csv"
+            "Download CSV",
+            csv,
+            "leads.csv",
+            "text/csv"
         )
