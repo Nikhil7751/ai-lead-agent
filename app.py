@@ -8,44 +8,40 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=".env")
 
 
-def create_search_query(niche, city):
-    return f"{niche} in {city}"
+# 🔥 MULTI KEYWORD LIST
+def generate_queries(niche, city):
+    variations = [
+        niche,
+        f"{niche} centre",
+        f"{niche} classes",
+        f"{niche} institute",
+        f"{niche} academy",
+        f"best {niche}",
+        f"top {niche}",
+        f"{niche} near me"
+    ]
+
+    return [f"{v} in {city}" for v in variations]
 
 
-# 🔥 PAGINATED FETCH
-def fetch_businesses(query, max_results=100):
+def fetch_businesses(query):
     api_key = os.getenv("SERPAPI_KEY") or st.secrets["SERPAPI_KEY"]
 
     url = "https://serpapi.com/search.json"
 
-    all_results = []
-    start = 0
+    params = {
+        "engine": "google_maps",
+        "q": query,
+        "api_key": api_key
+    }
 
-    while len(all_results) < max_results:
-        params = {
-            "engine": "google_maps",
-            "q": query,
-            "start": start,
-            "api_key": api_key
-        }
+    response = requests.get(url, params=params)
 
-        response = requests.get(url, params=params)
+    if response.status_code != 200:
+        return []
 
-        if response.status_code != 200:
-            st.error("Error fetching data")
-            break
-
-        data = response.json()
-        results = data.get("local_results", [])
-
-        if not results:
-            break
-
-        all_results.extend(results)
-
-        start += 20  # next page
-
-    return all_results[:max_results]
+    data = response.json()
+    return data.get("local_results", [])
 
 
 def extract_emails_from_text(text):
@@ -129,11 +125,10 @@ def extract_data(businesses):
 
 # ---------------- UI ---------------- #
 
-st.title("🚀 AI Lead Agent (Pro Max)")
+st.title("🚀 AI Lead Agent (Advanced)")
 
 niche = st.text_input("Enter Niche")
 cities_input = st.text_input("Enter Cities (comma separated)")
-max_results = st.slider("Number of leads to fetch", 20, 200, 100)
 
 if st.button("Generate Leads"):
 
@@ -147,16 +142,19 @@ if st.button("Generate Leads"):
         for city in cities:
             st.write(f"Processing {city}...")
 
-            query = create_search_query(niche, city)
+            queries = generate_queries(niche, city)
 
-            businesses = fetch_businesses(query, max_results)
+            for q in queries:
+                st.write(f"Searching: {q}")
 
-            leads = extract_data(businesses)
-            all_leads.extend(leads)
+                businesses = fetch_businesses(q)
+
+                leads = extract_data(businesses)
+                all_leads.extend(leads)
 
         df = pd.DataFrame(all_leads)
 
-        # 🔥 REMOVE DUPLICATES
+        # REMOVE DUPLICATES
         df = df.drop_duplicates(subset=["email"])
 
         st.success(f"Generated {len(df)} leads")
