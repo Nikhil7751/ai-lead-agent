@@ -8,8 +8,24 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=".env")
 
 
-# 🔥 MULTI KEYWORD LIST
-def generate_queries(niche, city):
+# 🔥 GENERIC AREA SEGMENTATION (WORKS FOR ANY CITY)
+def get_city_areas(city):
+    generic_areas = [
+        "near me",
+        "city center",
+        "main market",
+        "industrial area",
+        "sector 1",
+        "sector 2",
+        "phase 1",
+        "phase 2",
+        "downtown"
+    ]
+    return [f"{area} {city}" for area in generic_areas]
+
+
+# 🔥 MULTI KEYWORD VARIATIONS
+def generate_queries(niche, location):
     variations = [
         niche,
         f"{niche} centre",
@@ -20,28 +36,41 @@ def generate_queries(niche, city):
         f"top {niche}",
         f"{niche} near me"
     ]
+    return [f"{v} in {location}" for v in variations]
 
-    return [f"{v} in {city}" for v in variations]
 
-
-def fetch_businesses(query):
+# 🔥 PAGINATED FETCH
+def fetch_businesses(query, max_results=60):
     api_key = os.getenv("SERPAPI_KEY") or st.secrets["SERPAPI_KEY"]
 
     url = "https://serpapi.com/search.json"
 
-    params = {
-        "engine": "google_maps",
-        "q": query,
-        "api_key": api_key
-    }
+    all_results = []
+    start = 0
 
-    response = requests.get(url, params=params)
+    while len(all_results) < max_results:
+        params = {
+            "engine": "google_maps",
+            "q": query,
+            "start": start,
+            "api_key": api_key
+        }
 
-    if response.status_code != 200:
-        return []
+        response = requests.get(url, params=params)
 
-    data = response.json()
-    return data.get("local_results", [])
+        if response.status_code != 200:
+            break
+
+        data = response.json()
+        results = data.get("local_results", [])
+
+        if not results:
+            break
+
+        all_results.extend(results)
+        start += 20
+
+    return all_results[:max_results]
 
 
 def extract_emails_from_text(text):
@@ -125,39 +154,45 @@ def extract_data(businesses):
 
 # ---------------- UI ---------------- #
 
-st.title("🚀 AI Lead Agent (Advanced)")
+st.title("🚀 AI Lead Agent (Max Scale Engine)")
 
-niche = st.text_input("Enter Niche")
+niche = st.text_input("Enter Niche (e.g., coaching institute)")
 cities_input = st.text_input("Enter Cities (comma separated)")
+max_results = st.slider("Results per query", 20, 100, 60)
 
 if st.button("Generate Leads"):
 
     if not niche or not cities_input:
-        st.warning("Enter all fields")
+        st.warning("Please enter niche and cities")
     else:
         cities = [c.strip() for c in cities_input.split(",")]
 
         all_leads = []
 
         for city in cities:
-            st.write(f"Processing {city}...")
+            st.write(f"\n--- Processing {city} ---")
 
-            queries = generate_queries(niche, city)
+            locations = [city] + get_city_areas(city)
 
-            for q in queries:
-                st.write(f"Searching: {q}")
+            for location in locations:
+                st.write(f"📍 Location: {location}")
 
-                businesses = fetch_businesses(q)
+                queries = generate_queries(niche, location)
 
-                leads = extract_data(businesses)
-                all_leads.extend(leads)
+                for q in queries:
+                    st.write(f"🔍 {q}")
+
+                    businesses = fetch_businesses(q, max_results)
+
+                    leads = extract_data(businesses)
+                    all_leads.extend(leads)
 
         df = pd.DataFrame(all_leads)
 
-        # REMOVE DUPLICATES
+        # 🔥 REMOVE DUPLICATES
         df = df.drop_duplicates(subset=["email"])
 
-        st.success(f"Generated {len(df)} leads")
+        st.success(f"🔥 Generated {len(df)} leads")
 
         st.dataframe(df)
 
